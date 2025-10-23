@@ -31,6 +31,28 @@ CREATE TABLE historia_clinica (
     FOREIGN KEY (id_paciente) REFERENCES paciente (id_paciente)
     );
     
+CREATE TABLE farmacia (
+	id_farmacia INT AUTO_INCREMENT PRIMARY KEY,
+	nombre VARCHAR(100) NOT NULL,
+	ubicacion VARCHAR(100)
+);
+
+CREATE TABLE medicamento (
+	id_medicamento INT AUTO_INCREMENT PRIMARY KEY,
+	nombre VARCHAR(100) NOT NULL,
+	formato VARCHAR(50),
+	stock INT DEFAULT 0,
+	precio DECIMAL(10,2),
+	id_farmacia INT,
+	FOREIGN KEY (id_farmacia) REFERENCES farmacia(id_farmacia)
+);
+
+CREATE TABLE practica_medica (
+	id_practica INT AUTO_INCREMENT PRIMARY KEY,
+	nombre VARCHAR(100) NOT NULL,
+	descripcion VARCHAR(255)
+);
+
 CREATE TABLE especialidad (
 	id_especialidad INT auto_increment primary key,
     nombre VARCHAR (50)
@@ -77,6 +99,14 @@ CREATE TABLE turno (
     FOREIGN KEY (id_medico) REFERENCES medico (id_medico),
     FOREIGN KEY (id_paciente) REFERENCES paciente (id_paciente)
     );
+    
+CREATE TABLE turno_practica (
+	id_turno_practica INT AUTO_INCREMENT PRIMARY KEY,
+	id_turno INT NOT NULL,
+	id_practica INT NOT NULL,
+	FOREIGN KEY (id_turno) REFERENCES turno(id_turno),
+	FOREIGN KEY (id_practica) REFERENCES practica_medica(id_practica)
+);
     
 ALTER TABLE medico
 DROP FOREIGN KEY medico_ibfk_1,
@@ -206,6 +236,43 @@ INSERT INTO turno (id_clinica, id_medico, id_paciente, fecha, hora, duracion, co
 (1, 14, 14, '2025-10-10', '10:45:00', '20 minutos', '14N'),
 (1, 15, 15, '2025-10-10', '16:30:00', '25 minutos', '15O');
 
+INSERT INTO farmacia (nombre, ubicacion) VALUES
+('White-Ford', 'Brendan Mountains'),
+('Bray and Sons', 'Oconnell Knoll'),
+('Brown and Sons', 'Roberts Forge'),
+('Jackson Inc', 'John Greens'),
+('Brown-Watson', 'Felicia Garden'),
+('Brown, Howard and Cunningham', 'Charles Junctions'),
+('George-Delacruz', 'Hayes Stream'),
+('Smith Ltd', 'Amy Glen'),
+('Poole-Cobb', 'Brenda Lodge'),
+('Garcia, Whitaker and Taylor', 'Todd Place');
+
+INSERT INTO medicamento (nombre, formato, stock, precio, id_farmacia) VALUES
+('Even', 'Inyectable', 78, 110.00, 2),
+('Law', 'Comprimido', 107, 155.82, 1),
+('My', 'Inyectable', 189, 134.78, 2),
+('Author', 'Comprimido', 57, 137.48, 1),
+('Baby', 'Inyectable', 56, 324.50, 2),
+('Turn', 'Comprimido', 164, 335.71, 1),
+('Him', 'Comprimido', 158, 236.10, 1),
+('News', 'Comprimido', 136, 140.88, 2),
+('Animal', 'Comprimido', 141, 439.00, 2),
+('Down', 'Comprimido', 167, 314.49, 2);
+
+INSERT INTO practica_medica (nombre, descripcion) VALUES
+('Electrocardiograma', 'Estudio que registra la actividad eléctrica del corazón.'),
+('Radiografía de Tórax', 'Imagen diagnóstica que permite visualizar pulmones y corazón.'),
+('Ecografía Abdominal', 'Exploración por ultrasonido de los órganos abdominales.'),
+('Análisis de Sangre', 'Evaluación de componentes sanguíneos para diagnóstico general.'),
+('Espirometría', 'Prueba para medir la capacidad pulmonar y detectar enfermedades respiratorias.'),
+('Resonancia Magnética', 'Técnica de imagen avanzada que permite ver tejidos blandos con detalle.'),
+('Tomografía Computada', 'Exploración con rayos X para obtener imágenes detalladas del cuerpo.'),
+('Ecografía Mamaria', 'Estudio por ultrasonido para evaluar tejido mamario.'),
+('Audiometría', 'Prueba para determinar el nivel de audición de un paciente.'),
+('Colonoscopía', 'Estudio que examina el interior del colon con una cámara flexible.');
+
+
 CREATE OR REPLACE VIEW vw_turnos_completos AS
 SELECT
     t.id_turno,
@@ -252,6 +319,25 @@ SELECT
     os.gravado_exento
 FROM paciente p
 JOIN obra_social os ON p.id_obra_social = os.id_obra_social;
+
+CREATE OR REPLACE VIEW vw_medicos_especialidades AS
+SELECT 
+    m.id_medico,
+    CONCAT(m.nombre, ' ', m.apellido) AS nombre_completo,
+    e.nombre AS especialidad,
+    me.duracion_turno
+FROM medico m
+JOIN medico_especialidad me ON m.id_medico = me.id_medico
+JOIN especialidad e ON me.id_especialidad = e.id_especialidad;
+
+CREATE OR REPLACE VIEW vw_historia_clinica_completa AS
+SELECT 
+    p.id_paciente,
+    CONCAT(p.nombre, ' ', p.apellido) AS paciente,
+    hc.antecedentes,
+    hc.observaciones
+FROM historia_clinica hc
+JOIN paciente p ON hc.id_paciente = p.id_paciente;
 
 DELIMITER //
 
@@ -326,6 +412,16 @@ CREATE TABLE auditoria_turnos (
     registrado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE auditoria_baja_turnos (
+    id_baja INT AUTO_INCREMENT PRIMARY KEY,
+    id_turno INT,
+    id_medico INT,
+    id_paciente INT,
+    fecha_turno DATE,
+    hora_turno TIME,
+    eliminado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 DELIMITER //
 
 CREATE TRIGGER trg_log_turno_insert
@@ -334,6 +430,16 @@ FOR EACH ROW
 BEGIN
     INSERT INTO auditoria_turnos (id_turno, id_medico, id_paciente, fecha_turno, hora_turno)
     VALUES (NEW.id_turno, NEW.id_medico, NEW.id_paciente, NEW.fecha, NEW.hora);
+END //
+
+DELIMITER //
+
+CREATE TRIGGER trg_log_turno_delete
+AFTER DELETE ON turno
+FOR EACH ROW
+BEGIN
+    INSERT INTO auditoria_baja_turnos (id_turno, id_medico, id_paciente, fecha_turno, hora_turno)
+    VALUES (OLD.id_turno, OLD.id_medico, OLD.id_paciente, OLD.fecha, OLD.hora);
 END //
 
 DELIMITER ;
